@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Sound Warriors</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+    body {
+      background: #0a0a0f;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      touch-action: none;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    canvas { display: block; max-width: 100vw; max-height: 100vh; }
+  </style>
+</head>
+<body>
+<script src="https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs" type="module"></script>
+<script type="module">
+import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
+
+const GAME_W = 800;
+const GAME_H = 600;
+
+const k = kaboom({
+  width: GAME_W, height: GAME_H, background: [8, 8, 16],
+  stretch: true, letterbox: true, touchToMouse: true, crisp: false,
+});
+
+// ==================== CONSTANTS ====================
+const LANES = 4, LANE_W = 100;
+const TOTAL_LANE_W = LANES * LANE_W;
+const LANE_START_X = (GAME_W - TOTAL_LANE_W) / 2;
+const HIT_Y = GAME_H - 90, NOTE_SPEED = 350, SPAWN_Y = -40;
+const PERFECT_W = 28, GREAT_W = 55, GOOD_W = 85;
+const LANE_COLORS = [[255,80,130],[80,200,255],[100,255,100],[255,200,50]];
+const LANE_KEYS = ["d","f","j","k"];
+const LANE_LABELS = ["D","F","J","K"];
+
+// ==================== i18n ====================
+let lang = "en";
+
+const I18N = {
+  en: {
+    title: "SOUND WARRIORS",
+    subtitle: "The Silence Must End",
+    storyMode: "STORY MODE",
+    controls: "Controls",
+    controlsKb: "Keyboard: D  F  J  K    |    Mobile: Tap lanes",
+    pauseHint: "ESC = Pause during gameplay",
+    startHint: "Press SPACE to start Story Mode",
+    stageClear: "Stage Clear!",
+    spaceTap: "SPACE / Tap",
+    spaceToContinue: "SPACE / Tap to continue",
+    retryOrMenu: "SPACE: Retry  |  R: Menu",
+    victory: "VICTORY!",
+    timeUp: "TIME UP",
+    enemyDefeated: "Enemy Defeated!",
+    enemyHpRemain: (pct) => `Enemy HP: ${pct}%`,
+    paused: "PAUSED",
+    pauseResume: "ESC to resume  |  R to restart",
+    awakening: "AWAKENING!",
+    combo: (n) => `${n} COMBO`,
+    score: "SCORE",
+    maxCombo: "Max Combo",
+    accuracy: "Accuracy",
+    theEnd: "THE END",
+    endLine1: "The world's sound has been restored.",
+    endLine2: "From the depths of silence, melody rises again.",
+    endLine3: "The Sound Warriors' legend echoes forever.",
+    totalScore: (s) => `Total Score: ${s}`,
+    credits: "Credits",
+    credit1: "Game Design & Code: Claude Code + You",
+    credit2: "Music: TBD (Suno AI)",
+    credit3: "Engine: Kaboom.js",
+    thankYou: "Thank you for playing!",
+    returnMenu: "Press SPACE or Tap to return",
+    selectLang: "Select Language",
+    langChange: "Language / 言語",
+  },
+  ja: {
+    title: "SOUND WARRIORS",
+    subtitle: "沈黙を打ち破れ",
+    storyMode: "ストーリーモード",
+    controls: "操作方法",
+    controlsKb: "キーボード: D  F  J  K    |    スマホ: レーンをタップ",
+    pauseHint: "ESC = プレイ中にポーズ",
+    startHint: "SPACE でストーリーモード開始",
+    stageClear: "ステージクリア！",
+    spaceTap: "SPACE / タップ",
+    spaceToContinue: "SPACE / タップで次へ",
+    retryOrMenu: "SPACE: リトライ  |  R: メニュー",
+    victory: "勝利！",
+    timeUp: "タイムアップ",
+    enemyDefeated: "敵を撃破！",
+    enemyHpRemain: (pct) => `敵HP残り: ${pct}%`,
+    paused: "ポーズ中",
+    pauseResume: "ESC で再開  |  R でリスタート",
+    awakening: "覚醒！",
+    combo: (n) => `${n} コンボ`,
+    score: "スコア",
+    maxCombo: "最大コンボ",
+    accuracy: "正確率",
+    theEnd: "― 完 ―",
+    endLine1: "世界に音が戻った。",
+    endLine2: "沈黙の底から、再びメロディが立ち上がる。",
+    endLine3: "サウンドウォリアーズの伝説は、永遠に響き続ける。",
+    totalScore: (s) => `合計スコア: ${s}`,
+    credits: "クレジット",
+    credit1: "ゲームデザイン & コード: Claude Code + You",
+    credit2: "音楽: TBD (Suno AI)",
+    credit3: "エンジン: Kaboom.js",
+    thankYou: "プレイしてくれてありがとう！",
+    returnMenu: "SPACE またはタップでメニューへ",
+    selectLang: "言語を選択",
+    langChange: "Language / 言語",
+  },
+};
+
+function t(key, ...args) {
+  const val = I18N[lang][key];
+  return typeof val === "function" ? val(...args) : (val || key);
+}
+
+// ==================== STORY (bilingual) ====================
+const STORY_DATA = {
+  stages: [
+    {
+      id: 1, name: { en: "Resonance City", ja: "共鳴の街" },
+      enemy: { name: { en: "Noise Phantom", ja: "ノイズファントム" }, maxHp: 1800, color: [200, 60, 60] },
+      bpm: 120, duration: 25, noteSpeed: 340, bgColor: [15, 10, 30],
+      introCutscene: {
+        en: [
+          { speaker: "???", text: "The silence has spread too far...", bg: [10,5,25] },
+          { speaker: "???", text: "Only the Sound Warriors can restore harmony.", bg: [10,5,25] },
+          { speaker: "Kaito", text: "I can hear it... a melody, calling to me.", bg: [20,15,40] },
+          { speaker: "Kaito", text: "Let's go. The first Noise Phantom is near!", bg: [20,15,40] },
+        ],
+        ja: [
+          { speaker: "???", text: "沈黙が広がりすぎた...", bg: [10,5,25] },
+          { speaker: "???", text: "調和を取り戻せるのは、サウンドウォリアーズだけだ。", bg: [10,5,25] },
+          { speaker: "カイト", text: "聞こえる...メロディが、僕を呼んでいる。", bg: [20,15,40] },
+          { speaker: "カイト", text: "行こう。最初のノイズファントムが近くにいる！", bg: [20,15,40] },
+        ],
+      },
+      outroCutscene: {
+        en: [
+          { speaker: "Kaito", text: "The phantom is fading... the sound is returning!", bg: [20,20,50] },
+          { speaker: "???", text: "Well done. But this was only the beginning.", bg: [15,10,35] },
+        ],
+        ja: [
+          { speaker: "カイト", text: "ファントムが消えていく...音が戻ってきた！", bg: [20,20,50] },
+          { speaker: "???", text: "よくやった。だが、これはまだ始まりに過ぎない。", bg: [15,10,35] },
+        ],
+      },
+    },
+    {
+      id: 2, name: { en: "Echo Canyon", ja: "反響の峡谷" },
+      enemy: { name: { en: "Dissonance Wraith", ja: "不協和のレイス" }, maxHp: 2800, color: [60, 60, 200] },
+      bpm: 140, duration: 28, noteSpeed: 380, bgColor: [10, 15, 35],
+      introCutscene: {
+        en: [
+          { speaker: "Kaito", text: "The echoes here are distorted...", bg: [10,15,35] },
+          { speaker: "???", text: "This is the Dissonance Wraith's domain.", bg: [15,10,40] },
+          { speaker: "Kaito", text: "I won't let it silence this place!", bg: [15,20,45] },
+        ],
+        ja: [
+          { speaker: "カイト", text: "ここのエコーが歪んでいる...", bg: [10,15,35] },
+          { speaker: "???", text: "ここは不協和のレイスの領域だ。", bg: [15,10,40] },
+          { speaker: "カイト", text: "この場所を沈黙させはしない！", bg: [15,20,45] },
+        ],
+      },
+      outroCutscene: {
+        en: [
+          { speaker: "Kaito", text: "The canyon sings again... beautiful.", bg: [20,25,55] },
+          { speaker: "???", text: "One more threat remains. The Void Conductor awaits.", bg: [10,10,30] },
+        ],
+        ja: [
+          { speaker: "カイト", text: "峡谷がまた歌い始めた...美しい。", bg: [20,25,55] },
+          { speaker: "???", text: "残る脅威はあと一つ。虚無の指揮者が待っている。", bg: [10,10,30] },
+        ],
+      },
+    },
+    {
+      id: 3, name: { en: "The Silent Core", ja: "沈黙の核心" },
+      enemy: { name: { en: "Void Conductor", ja: "虚無の指揮者" }, maxHp: 4000, color: [150, 30, 150] },
+      bpm: 155, duration: 32, noteSpeed: 400, bgColor: [20, 5, 20],
+      introCutscene: {
+        en: [
+          { speaker: "???", text: "You've come far, Sound Warrior.", bg: [20,5,20] },
+          { speaker: "Void Conductor", text: "But all sound... must end.", bg: [30,0,30] },
+          { speaker: "Kaito", text: "Sound doesn't end. It echoes forever!", bg: [25,10,30] },
+          { speaker: "Kaito", text: "This is our final battle!", bg: [30,15,35] },
+        ],
+        ja: [
+          { speaker: "???", text: "ここまで来たか、サウンドウォリアー。", bg: [20,5,20] },
+          { speaker: "虚無の指揮者", text: "だが全ての音は...終わらねばならない。", bg: [30,0,30] },
+          { speaker: "カイト", text: "音は終わらない。永遠に響き続ける！", bg: [25,10,30] },
+          { speaker: "カイト", text: "これが最後の戦いだ！", bg: [30,15,35] },
+        ],
+      },
+      outroCutscene: {
+        en: [
+          { speaker: "Void Conductor", text: "Impossible... the silence... broken...", bg: [30,20,40] },
+          { speaker: "Kaito", text: "The world has its sound back.", bg: [30,30,60] },
+          { speaker: "???", text: "Thank you, Sound Warrior. The melody lives on.", bg: [40,40,80] },
+        ],
+        ja: [
+          { speaker: "虚無の指揮者", text: "ありえない...沈黙が...打ち砕かれた...", bg: [30,20,40] },
+          { speaker: "カイト", text: "世界に音が戻った。", bg: [30,30,60] },
+          { speaker: "???", text: "ありがとう、サウンドウォリアー。メロディは生き続ける。", bg: [40,40,80] },
+        ],
+      },
+    },
+  ],
+};
+
+// Helper to get localized story data
+function getStage(idx) {
+  const s = STORY_DATA.stages[idx];
+  return {
+    ...s,
+    name: s.name[lang],
+    enemy: { ...s.enemy, name: s.enemy.name[lang] },
+    introCutscene: s.introCutscene[lang],
+    outroCutscene: s.outroCutscene[lang],
+  };
+}
+
+// ==================== AUDIO ====================
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === "suspended") audioCtx.resume(); }
+}
+function playHitSound(j) {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime, o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  if (j === "PERFECT") { o.type="sine"; o.frequency.setValueAtTime(880,now); o.frequency.exponentialRampToValueAtTime(1320,now+0.05); g.gain.setValueAtTime(0.25,now); g.gain.exponentialRampToValueAtTime(0.01,now+0.12); o.start(now); o.stop(now+0.12); const o2=audioCtx.createOscillator(),g2=audioCtx.createGain(); o2.connect(g2);g2.connect(audioCtx.destination); o2.type="triangle";o2.frequency.setValueAtTime(1320,now);g2.gain.setValueAtTime(0.12,now);g2.gain.exponentialRampToValueAtTime(0.01,now+0.08);o2.start(now);o2.stop(now+0.08); }
+  else if (j === "GREAT") { o.type="sine"; o.frequency.setValueAtTime(660,now); g.gain.setValueAtTime(0.18,now); g.gain.exponentialRampToValueAtTime(0.01,now+0.08); o.start(now); o.stop(now+0.08); }
+  else if (j === "GOOD") { o.type="triangle"; o.frequency.setValueAtTime(440,now); g.gain.setValueAtTime(0.12,now); g.gain.exponentialRampToValueAtTime(0.01,now+0.06); o.start(now); o.stop(now+0.06); }
+  else { o.type="sawtooth"; o.frequency.setValueAtTime(150,now); o.frequency.exponentialRampToValueAtTime(80,now+0.15); g.gain.setValueAtTime(0.12,now); g.gain.exponentialRampToValueAtTime(0.01,now+0.15); o.start(now); o.stop(now+0.15); }
+}
+function playAwakeningSound() { if (!audioCtx) return; const now=audioCtx.currentTime; [660,880,1100,1320].forEach((f,i)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);o.type="sine";o.frequency.setValueAtTime(f,now+i*0.04);g.gain.setValueAtTime(0.18,now+i*0.04);g.gain.exponentialRampToValueAtTime(0.01,now+i*0.04+0.25);o.start(now+i*0.04);o.stop(now+i*0.04+0.25);}); }
+function playVictorySound() { if (!audioCtx) return; const now=audioCtx.currentTime; [523,659,784,1047].forEach((f,i)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.connect(g);g.connect(audioCtx.destination);o.type="sine";o.frequency.setValueAtTime(f,now+i*0.12);g.gain.setValueAtTime(0.2,now+i*0.12);g.gain.exponentialRampToValueAtTime(0.01,now+i*0.12+0.4);o.start(now+i*0.12);o.stop(now+i*0.12+0.4);}); }
+
+// ==================== CHART ====================
+function generateChart(bpm, duration, stageId) {
+  const chart=[], beat=60/bpm; let t=2, beatCount=0;
+  const sp = {
+    1: [(b)=>[b%4],(b)=>[(b*2)%4],(b)=>[b%2===0?0:3],(b)=>[b%2===0?1:2],(b)=>b%4===0?[0,2]:[b%4]],
+    2: [(b)=>[b%4],(b)=>[b%4,(b+2)%4],(b)=>b%3===0?[b%4,(b+1)%4]:[b%4],(b)=>[b%2===0?0:3],(b)=>[3-(b%4)],(b)=>b%4===0?[0,1,2,3].slice(0,2+(b%3)):[b%4]],
+    3: [(b)=>[b%4,(b+1)%4],(b)=>[b%4],(b)=>b%2===0?[0,3]:[1,2],(b)=>[3-(b%4),b%4],(b)=>b%3===0?[0,1,3]:[b%4],(b)=>[(b*3)%4],(b)=>b%4<2?[b%4]:[b%4,(b+2)%4]],
+  };
+  const patterns=sp[stageId]||sp[1]; let patIdx=0;
+  while(t<duration){const pat=patterns[patIdx%patterns.length];pat(beatCount).forEach(l=>chart.push({time:t,lane:Math.min(3,Math.max(0,l))}));beatCount++;if(beatCount%12===0)patIdx++;if(stageId>=2&&beatCount%4===0){t+=beat/2;chart.push({time:t,lane:(beatCount+1)%4});t+=beat/2;}else t+=beat;}
+  return chart.sort((a,b)=>a.time-b.time);
+}
+
+// ==================== STATE ====================
+let score=0,combo=0,maxCombo=0;
+let judgments={perfect:0,great:0,good:0,miss:0};
+let gameActive=false,paused=false;
+let songTime=0,nextNoteIdx=0;
+let lastJudgmentTimer=0,comboShakeTimer=0;
+let screenShakeTimer=0,screenShakeIntensity=0;
+let bgVibrancy=0,isAwakened=false;
+let awakeningTimer=0,awakeningFlashTimer=0;
+let totalScore=0,currentStageIdx=0;
+let enemyHp=0,enemyMaxHp=0,enemyHitTimer=0;
+
+function addBgParticles(count,zv=0){for(let i=0;i<count;i++)add([circle(rand(1,3)),pos(rand(0,GAME_W),rand(0,GAME_H)),color(rand(80,200),rand(100,220),rand(180,255)),opacity(rand(0.05,0.3)),z(zv),"floater",{vy:rand(-15,-50),vx:rand(-8,8)}]);}
+
+// ============================================================
+// LANGUAGE SELECT SCENE
+// ============================================================
+scene("langselect", () => {
+  addBgParticles(20);
+  onUpdate("floater", p => { p.pos.y+=p.vy*dt(); p.pos.x+=p.vx*dt(); if(p.pos.y<-10){p.pos.y=GAME_H+10;p.pos.x=rand(0,GAME_W);} });
+
+  add([text("SOUND WARRIORS",{size:42}),pos(GAME_W/2,120),anchor("center"),color(255,200,50),z(10)]);
+  add([rect(150,1),pos(GAME_W/2-75,155),color(60,60,80),z(10)]);
+  add([text("Language / 言語",{size:18}),pos(GAME_W/2,190),anchor("center"),color(200,200,220),z(10)]);
+
+  // English button
+  const enBtn = add([rect(260,55,{radius:10}),pos(GAME_W/2,280),anchor("center"),color(25,25,45),opacity(0.9),area(),z(10),"langbtn"]);
+  add([rect(262,57,{radius:11}),pos(GAME_W/2,280),anchor("center"),color(80,200,255),opacity(0.3),z(9)]);
+  add([text("English",{size:22}),pos(GAME_W/2,275),anchor("center"),color(220,220,235),z(11)]);
+  add([text("Play in English",{size:12}),pos(GAME_W/2,298),anchor("center"),color(120,160,200),z(11)]);
+
+  enBtn.onClick(() => { lang = "en"; initAudio(); go("menu"); });
+
+  // Japanese button
+  const jaBtn = add([rect(260,55,{radius:10}),pos(GAME_W/2,370),anchor("center"),color(25,25,45),opacity(0.9),area(),z(10),"langbtn"]);
+  add([rect(262,57,{radius:11}),pos(GAME_W/2,370),anchor("center"),color(255,80,130),opacity(0.3),z(9)]);
+  add([text("日本語",{size:22}),pos(GAME_W/2,365),anchor("center"),color(220,220,235),z(11)]);
+  add([text("日本語でプレイ",{size:12}),pos(GAME_W/2,388),anchor("center"),color(200,120,150),z(11)]);
+
+  jaBtn.onClick(() => { lang = "ja"; initAudio(); go("menu"); });
+
+  // Keyboard shortcuts
+  add([text("Press 1 for English  |  2キーで日本語",{size:12}),pos(GAME_W/2,460),anchor("center"),color(100,100,120),z(10)]);
+
+  onKeyPress("1", () => { lang = "en"; initAudio(); go("menu"); });
+  onKeyPress("2", () => { lang = "ja"; initAudio(); go("menu"); });
+});
+
+// ============================================================
+// MENU SCENE
+// ============================================================
+scene("menu", () => {
+  currentStageIdx=0; totalScore=0;
+  addBgParticles(25);
+  onUpdate("floater",p=>{p.pos.y+=p.vy*dt();p.pos.x+=p.vx*dt();if(p.pos.y<-10){p.pos.y=GAME_H+10;p.pos.x=rand(0,GAME_W);}});
+
+  add([text(t("title"),{size:48}),pos(GAME_W/2,100),anchor("center"),color(255,200,50),z(10)]);
+  add([text(t("subtitle"),{size:15}),pos(GAME_W/2,145),anchor("center"),color(160,140,100),z(10)]);
+  add([rect(200,1),pos(GAME_W/2-100,175),color(60,60,80),z(10)]);
+  add([text(t("storyMode"),{size:20}),pos(GAME_W/2,200),anchor("center"),color(200,200,220),z(10)]);
+
+  STORY_DATA.stages.forEach((rawStage, i) => {
+    const stage = getStage(i);
+    const y = 250+i*65;
+    const btn = add([rect(320,48,{radius:8}),pos(GAME_W/2,y),anchor("center"),color(25,25,45),opacity(0.9),area(),z(10)]);
+    add([rect(322,50,{radius:9}),pos(GAME_W/2,y),anchor("center"),color(...rawStage.enemy.color),opacity(0.3),z(9)]);
+    add([text(`Stage ${i+1}: ${stage.name}`,{size:16}),pos(GAME_W/2,y-8),anchor("center"),color(220,220,235),z(11)]);
+    add([text(`vs ${stage.enemy.name}  |  BPM ${stage.bpm}`,{size:11}),pos(GAME_W/2,y+12),anchor("center"),color(...rawStage.enemy.color),opacity(0.8),z(11)]);
+    btn.onClick(()=>{initAudio();currentStageIdx=i;totalScore=0;go("cutscene",{stageIdx:i,type:"intro"});});
+  });
+
+  add([rect(GAME_W-100,1),pos(50,460),color(40,40,60),z(10)]);
+  add([text(t("controls"),{size:14}),pos(GAME_W/2,480),anchor("center"),color(150,150,170),z(10)]);
+  add([text(t("controlsKb"),{size:12}),pos(GAME_W/2,502),anchor("center"),color(110,110,130),z(10)]);
+  add([text(t("pauseHint"),{size:11}),pos(GAME_W/2,522),anchor("center"),color(90,90,110),z(10)]);
+
+  // Language switch button
+  add([text(t("langChange"),{size:11}),pos(GAME_W-15,GAME_H-15),anchor("botright"),color(80,80,110),z(10)]);
+  const langBtn = add([rect(120,22,{radius:4}),pos(GAME_W-15,GAME_H-15),anchor("botright"),opacity(0),area(),z(11)]);
+  langBtn.onClick(()=>go("langselect"));
+
+  const st = add([text(t("startHint"),{size:16}),pos(GAME_W/2,560),anchor("center"),color(255,255,255),z(10)]);
+  let bt=0; st.onUpdate(()=>{bt+=dt();st.opacity=0.4+0.5*Math.sin(bt*3);});
+  onKeyPress("space",()=>{initAudio();currentStageIdx=0;totalScore=0;go("cutscene",{stageIdx:0,type:"intro"});});
+});
+
+// ============================================================
+// CUTSCENE SCENE
+// ============================================================
+scene("cutscene",({stageIdx,type})=>{
+  const stage=getStage(stageIdx);
+  const scenes=type==="intro"?stage.introCutscene:stage.outroCutscene;
+  let line=0,charTyping=true,displayedText="",typeTimer=0;
+  const TYPE_SPEED=0.03;
+
+  const bgRect=add([rect(GAME_W,GAME_H),pos(0,0),color(...scenes[0].bg),z(0)]);
+  addBgParticles(12,1);
+  onUpdate("floater",p=>{p.pos.y+=p.vy*dt();if(p.pos.y<-5)p.pos.y=GAME_H+5;});
+
+  if(type==="intro"){
+    add([text(`Stage ${stageIdx+1}`,{size:13}),pos(GAME_W/2,35),anchor("center"),color(120,120,150),z(10)]);
+    add([text(stage.name,{size:30}),pos(GAME_W/2,68),anchor("center"),color(255,200,50),z(10)]);
+    add([text(`vs ${stage.enemy.name}`,{size:16}),pos(GAME_W/2,100),anchor("center"),color(...STORY_DATA.stages[stageIdx].enemy.color),z(10)]);
+  } else {
+    add([text(t("stageClear"),{size:26}),pos(GAME_W/2,55),anchor("center"),color(80,255,120),z(10)]);
+  }
+
+  const charVisual=add([circle(45),pos(GAME_W/2,GAME_H/2-50),anchor("center"),color(200,200,220),opacity(0.12),z(5)]);
+  const charRing=add([circle(50),pos(GAME_W/2,GAME_H/2-50),anchor("center"),color(200,200,220),opacity(0.06),z(4)]);
+
+  add([rect(GAME_W-50,2),pos(25,GAME_H-190),color(80,80,120),opacity(0.3),z(49)]);
+  add([rect(GAME_W-50,145,{radius:8}),pos(25,GAME_H-188),color(8,8,18),opacity(0.92),z(50)]);
+
+  const speakerLabel=add([text(scenes[0].speaker,{size:15}),pos(55,GAME_H-178),color(255,200,50),z(51)]);
+  const dialogText=add([text("",{size:17,width:GAME_W-120}),pos(55,GAME_H-152),color(210,210,225),z(51)]);
+  const pageInd=add([text(`1 / ${scenes.length}`,{size:11}),pos(GAME_W-55,GAME_H-52),anchor("topright"),color(80,80,100),z(51)]);
+  const contText=add([text(t("spaceTap"),{size:13}),pos(GAME_W/2,GAME_H-25),anchor("center"),color(160,160,180),z(51)]);
+  let ct=0; contText.onUpdate(()=>{ct+=dt();contText.opacity=0.3+0.4*Math.sin(ct*3);});
+
+  function showLine(idx){
+    if(idx>=scenes.length){
+      if(type==="intro")go("game",{stageIdx});
+      else if(stageIdx+1<STORY_DATA.stages.length)go("cutscene",{stageIdx:stageIdx+1,type:"intro"});
+      else go("ending");
+      return;
+    }
+    line=idx; const s=scenes[idx];
+    speakerLabel.text=s.speaker; pageInd.text=`${idx+1} / ${scenes.length}`; bgRect.color=rgb(...s.bg);
+    const spk=s.speaker;
+    if(spk==="Kaito"||spk==="カイト"){speakerLabel.color=rgb(80,200,255);charVisual.color=rgb(80,200,255);}
+    else if(spk.includes("Conductor")||spk.includes("指揮者")){speakerLabel.color=rgb(180,50,180);charVisual.color=rgb(180,50,180);}
+    else if(spk.includes("Phantom")||spk.includes("ファントム")||spk.includes("Wraith")||spk.includes("レイス")){speakerLabel.color=rgb(200,60,60);charVisual.color=rgb(200,60,60);}
+    else{speakerLabel.color=rgb(255,200,50);charVisual.color=rgb(200,200,220);}
+    displayedText="";charTyping=true;typeTimer=0;
+  }
+
+  onUpdate(()=>{
+    if(charTyping&&line<scenes.length){
+      typeTimer+=dt(); const full=scenes[line].text; const show=Math.floor(typeTimer/TYPE_SPEED);
+      if(show>=full.length){displayedText=full;charTyping=false;}else displayedText=full.substring(0,show);
+      dialogText.text=displayedText;
+    }
+    const pulse=Math.sin(time()*2)*0.03+0.12; charVisual.opacity=pulse; charRing.opacity=pulse*0.5;
+  });
+
+  function advance(){if(charTyping){charTyping=false;displayedText=scenes[line].text;dialogText.text=displayedText;}else showLine(line+1);}
+  showLine(0);
+  onKeyPress("space",advance); onClick(advance);
+});
+
+// ============================================================
+// GAME SCENE
+// ============================================================
+scene("game",({stageIdx})=>{
+  const stage=getStage(stageIdx);
+  const chart=generateChart(stage.bpm,stage.duration,stage.id);
+  const noteSpeed=stage.noteSpeed||NOTE_SPEED;
+
+  score=0;combo=0;maxCombo=0;judgments={perfect:0,great:0,good:0,miss:0};
+  songTime=0;nextNoteIdx=0;gameActive=true;paused=false;
+  lastJudgmentTimer=0;comboShakeTimer=0;screenShakeTimer=0;screenShakeIntensity=0;
+  bgVibrancy=0;isAwakened=false;awakeningTimer=0;awakeningFlashTimer=0;
+  enemyMaxHp=stage.enemy.maxHp;enemyHp=enemyMaxHp;enemyHitTimer=0;
+
+  const bgOverlay=add([rect(GAME_W,GAME_H),pos(0,0),color(...stage.bgColor),opacity(0.3),z(-10)]);
+  const awakeFlash=add([rect(GAME_W,GAME_H),pos(0,0),color(255,255,255),opacity(0),z(200)]);
+  const awakeText=add([text("",{size:44}),pos(GAME_W/2,GAME_H/2-40),anchor("center"),color(255,220,50),opacity(0),z(201)]);
+  for(let i=0;i<12;i++)add([circle(rand(1,2)),pos(rand(0,GAME_W),rand(0,GAME_H)),color(100,150,255),opacity(0),z(-5),"bgp",{baseX:rand(0,GAME_W),vy:rand(-25,-60),phase:rand(0,Math.PI*2)}]);
+
+  // Pause
+  const pauseOverlay=add([rect(GAME_W,GAME_H),pos(0,0),color(0,0,0),opacity(0),z(300)]);
+  const pauseT=add([text(t("paused"),{size:40}),pos(GAME_W/2,GAME_H/2-30),anchor("center"),color(255,255,255),opacity(0),z(301)]);
+  const pauseH=add([text(t("pauseResume"),{size:14}),pos(GAME_W/2,GAME_H/2+20),anchor("center"),color(150,150,170),opacity(0),z(301)]);
+  function togglePause(){paused=!paused;pauseOverlay.opacity=paused?0.7:0;pauseT.opacity=paused?1:0;pauseH.opacity=paused?0.8:0;}
+  onKeyPress("escape",togglePause);
+  onKeyPress("r",()=>{if(paused)go("cutscene",{stageIdx,type:"intro"});});
+
+  // Enemy
+  add([text(stage.enemy.name,{size:13}),pos(GAME_W/2,10),anchor("center"),color(...STORY_DATA.stages[stageIdx].enemy.color),z(100)]);
+  add([rect(260,14,{radius:4}),pos(GAME_W/2-130,26),color(25,25,40),z(99)]);
+  const enemyHpBar=add([rect(260,14,{radius:4}),pos(GAME_W/2-130,26),color(...STORY_DATA.stages[stageIdx].enemy.color),z(100)]);
+  const enemyHpText=add([text("",{size:10}),pos(GAME_W/2,33),anchor("center"),color(255,255,255),z(101)]);
+  const enemyBody=add([circle(30),pos(GAME_W/2,68),anchor("center"),color(...STORY_DATA.stages[stageIdx].enemy.color),opacity(0.5),z(98)]);
+  add([circle(20),pos(GAME_W/2,68),anchor("center"),color(255,255,255),opacity(0.08),z(98)]);
+  add([text(stage.name,{size:11}),pos(15,10),color(80,80,110),z(100)]);
+  add([text(`Stage ${stageIdx+1}`,{size:10}),pos(15,24),color(60,60,90),z(100)]);
+
+  // Lanes
+  const laneBgs=[];
+  for(let i=0;i<LANES;i++){const x=LANE_START_X+i*LANE_W;laneBgs.push(add([rect(LANE_W-4,GAME_H),pos(x+2,0),color(18,18,30),opacity(0.7),z(0)]));add([rect(1,GAME_H),pos(x,0),color(35,35,55),opacity(0.8),z(1)]);}
+  add([rect(1,GAME_H),pos(LANE_START_X+TOTAL_LANE_W,0),color(35,35,55),opacity(0.8),z(1)]);
+  add([rect(TOTAL_LANE_W+4,2),pos(LANE_START_X-2,HIT_Y-1),color(255,255,255),opacity(0.15),z(4)]);
+  const hitLine=add([rect(TOTAL_LANE_W,3),pos(LANE_START_X,HIT_Y),color(255,255,255),opacity(0.6),z(5)]);
+  add([rect(TOTAL_LANE_W+4,2),pos(LANE_START_X-2,HIT_Y+3),color(255,255,255),opacity(0.1),z(4)]);
+  for(let i=0;i<LANES;i++){const cx=LANE_START_X+i*LANE_W+LANE_W/2;add([circle(28),pos(cx,HIT_Y),anchor("center"),color(...LANE_COLORS[i]),opacity(0.12),z(4),"hitzone",{lane:i}]);add([text(LANE_LABELS[i],{size:18}),pos(cx,HIT_Y+30),anchor("center"),color(...LANE_COLORS[i]),opacity(0.5),z(5)]);}
+  for(let i=0;i<LANES;i++){const tz=add([rect(LANE_W,200),pos(LANE_START_X+i*LANE_W,HIT_Y-100),opacity(0),area(),z(50),"touchzone",{lane:i}]);tz.onClick(()=>{if(gameActive&&!paused)hitLane(i);});}
+
+  // UI
+  const scoreLabel=add([text("0",{size:22}),pos(GAME_W-15,50),anchor("topright"),color(255,255,255),z(100)]);
+  add([text(t("score"),{size:9}),pos(GAME_W-15,40),anchor("topright"),color(80,80,100),z(100)]);
+  const comboLabel=add([text("",{size:34}),pos(GAME_W/2,HIT_Y-140),anchor("center"),color(255,200,50),z(100)]);
+  const judgmentLabel=add([text("",{size:26}),pos(GAME_W/2,HIT_Y-75),anchor("center"),z(100)]);
+  const comboMeterBg=add([rect(100,6,{radius:3}),pos(GAME_W/2-50,HIT_Y-108),color(25,25,40),opacity(0),z(99)]);
+  const comboMeterFill=add([rect(1,6,{radius:3}),pos(GAME_W/2-50,HIT_Y-108),color(255,200,50),opacity(0),z(100)]);
+  add([rect(GAME_W-30,4,{radius:2}),pos(15,GAME_H-12),color(25,25,40),z(100)]);
+  const progressFill=add([rect(1,4,{radius:2}),pos(15,GAME_H-12),color(80,200,255),z(101)]);
+
+  function spawnNote(lane){const cx=LANE_START_X+lane*LANE_W+LANE_W/2,nid=Math.random();add([rect(LANE_W-18,16,{radius:5}),pos(cx,SPAWN_Y),anchor("center"),color(...LANE_COLORS[lane]),z(10),"note",{lane,hit:false,noteId:nid}]);add([rect(LANE_W-10,20,{radius:7}),pos(cx,SPAWN_Y),anchor("center"),color(...LANE_COLORS[lane]),opacity(0.2),z(9),"noteglow",{noteId:nid}]);}
+  function flashLane(lane,col,intensity){add([rect(LANE_W-4,GAME_H),pos(LANE_START_X+lane*LANE_W+2,0),color(...col),opacity(intensity),z(2),"laneflash",{life:0.15}]);}
+  function showDamage(x,y,dmg){add([text(`${dmg}`,{size:16}),pos(x+rand(-15,15),y),anchor("center"),color(255,120,120),z(150),"dmgtext",{life:0.7}]);}
+
+  function hitLane(lane){
+    get("hitzone").forEach(h=>{if(h.lane===lane){h.opacity=0.5;wait(0.12,()=>{h.opacity=0.12;});}});
+    const notes=get("note").filter(n=>n.lane===lane&&!n.hit);if(!notes.length)return;
+    let closest=null,closestDist=Infinity;for(const n of notes){const d=Math.abs(n.pos.y-HIT_Y);if(d<closestDist){closestDist=d;closest=n;}}
+    if(!closest||closestDist>GOOD_W)return;closest.hit=true;
+    let judgment,points,jColor,damage;
+    if(closestDist<=PERFECT_W){judgment="PERFECT";points=300;jColor=[255,230,50];damage=70;judgments.perfect++;}
+    else if(closestDist<=GREAT_W){judgment="GREAT";points=200;jColor=[80,255,120];damage=45;judgments.great++;}
+    else{judgment="GOOD";points=100;jColor=[80,180,255];damage=20;judgments.good++;}
+    combo++;if(combo>maxCombo)maxCombo=combo;score+=points*(1+Math.floor(combo/10)*0.1);
+    const actualDmg=Math.floor(damage*(1+Math.floor(combo/10)*0.15));enemyHp=Math.max(0,enemyHp-actualDmg);enemyHitTimer=0.12;showDamage(GAME_W/2,55,actualDmg);
+    lastJudgmentTimer=0.5;judgmentLabel.text=judgment;judgmentLabel.color=rgb(...jColor);playHitSound(judgment);
+    if(judgment==="PERFECT"){flashLane(lane,LANE_COLORS[lane],0.25);screenShakeTimer=0.06;screenShakeIntensity=3;}else if(judgment==="GREAT")flashLane(lane,LANE_COLORS[lane],0.12);
+    spawnHitEffect(closest.pos.x,HIT_Y,LANE_COLORS[lane],judgment==="PERFECT");
+    bgVibrancy=Math.min(1,bgVibrancy+(judgment==="PERFECT"?0.05:judgment==="GREAT"?0.025:0.01));
+    if([10,25,50,75].includes(combo)){comboShakeTimer=0.2;spawnComboExplosion();}
+    if(combo>=30&&!isAwakened){isAwakened=true;awakeningTimer=1.8;awakeningFlashTimer=0.25;awakeFlash.opacity=0.5;awakeText.text=t("awakening");awakeText.opacity=1;playAwakeningSound();}
+    get("noteglow").filter(g=>g.noteId===closest.noteId).forEach(g=>destroy(g));destroy(closest);
+  }
+
+  function spawnHitEffect(x,y,col,isPerfect){const count=isPerfect?16:5;for(let i=0;i<count;i++){const a=(Math.PI*2/count)*i,sp=isPerfect?rand(180,350):rand(70,150),sz=isPerfect?rand(3,7):rand(2,4);add([rect(sz,sz),pos(x,y),anchor("center"),color(...col),opacity(1),z(20),"particle",{vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-(isPerfect?80:40),life:isPerfect?0.6:0.35,maxLife:isPerfect?0.6:0.35}]);}if(isPerfect){for(let r=0;r<2;r++)add([circle(6),pos(x,y),anchor("center"),color(...col),opacity(0.6-r*0.2),z(19),"ring",{life:0.35+r*0.08,maxLife:0.35+r*0.08}]);add([rect(4,0),pos(x,y),anchor("bot"),color(...col),opacity(0.5),z(18),"lightbeam",{life:0.35}]);}}
+  function spawnComboExplosion(){for(let i=0;i<20;i++){const a=(Math.PI*2/20)*i;add([circle(rand(2,4)),pos(GAME_W/2,HIT_Y-140),anchor("center"),color(255,rand(150,255),rand(0,100)),opacity(1),z(110),"particle",{vx:Math.cos(a)*rand(80,200),vy:Math.sin(a)*rand(80,200),life:0.5,maxLife:0.5}]);}}
+
+  for(let i=0;i<LANES;i++)onKeyPress(LANE_KEYS[i],()=>{if(gameActive&&!paused)hitLane(i);});
+
+  onUpdate(()=>{
+    if(!gameActive||paused)return;songTime+=dt();
+    while(nextNoteIdx<chart.length){const e=chart[nextNoteIdx];if(songTime>=e.time-(HIT_Y-SPAWN_Y)/noteSpeed){spawnNote(e.lane);nextNoteIdx++;}else break;}
+    get("note").forEach(n=>{n.pos.y+=noteSpeed*dt();if(!n.hit&&n.pos.y>HIT_Y+GOOD_W){n.hit=true;combo=0;isAwakened=false;judgments.miss++;lastJudgmentTimer=0.5;judgmentLabel.text="MISS";judgmentLabel.color=rgb(255,60,60);playHitSound("MISS");bgVibrancy=Math.max(0,bgVibrancy-0.12);n.opacity=0.2;wait(0.25,()=>{if(n.exists())destroy(n);});}if(n.pos.y>GAME_H+50)destroy(n);});
+    get("noteglow").forEach(g=>{const n=get("note").find(x=>x.noteId===g.noteId);if(n&&n.exists()){g.pos.x=n.pos.x;g.pos.y=n.pos.y;}else destroy(g);});
+    get("particle").forEach(p=>{p.pos.x+=p.vx*dt();p.pos.y+=p.vy*dt();p.vy+=350*dt();p.life-=dt();p.opacity=Math.max(0,p.life/p.maxLife);if(p.life<=0)destroy(p);});
+    get("ring").forEach(r=>{r.life-=dt();const pr=1-r.life/r.maxLife;r.radius=6+pr*45;r.opacity=Math.max(0,(1-pr)*0.6);if(r.life<=0)destroy(r);});
+    get("lightbeam").forEach(b=>{b.life-=dt();const pr=1-b.life/0.35;b.height=pr*180;b.opacity=Math.max(0,(1-pr)*0.5);if(b.life<=0)destroy(b);});
+    get("laneflash").forEach(f=>{f.life-=dt();f.opacity=Math.max(0,f.life/0.15*0.25);if(f.life<=0)destroy(f);});
+    get("dmgtext").forEach(d=>{d.life-=dt();d.pos.y-=35*dt();d.opacity=Math.max(0,d.life/0.7);if(d.life<=0)destroy(d);});
+    enemyHpBar.width=Math.max(0,260*(enemyHp/enemyMaxHp));enemyHpText.text=`${Math.floor(enemyHp)} / ${enemyMaxHp}`;
+    if(enemyHitTimer>0){enemyHitTimer-=dt();enemyBody.opacity=0.25;}else enemyBody.opacity=0.5;
+    const hpR=enemyHp/enemyMaxHp;if(hpR>0.5)enemyHpBar.color=rgb(...STORY_DATA.stages[stageIdx].enemy.color);else if(hpR>0.25)enemyHpBar.color=rgb(255,180,50);else enemyHpBar.color=rgb(255,50,50);
+    bgVibrancy=Math.max(0,bgVibrancy-0.006*dt());bgOverlay.opacity=0.3+bgVibrancy*0.15;
+    if(isAwakened){const p=Math.sin(songTime*8)*0.5+0.5;hitLine.color=rgb(255,200+Math.floor(p*55),50+Math.floor(p*200));hitLine.opacity=0.6+p*0.3;laneBgs.forEach((lb,i)=>{const c=LANE_COLORS[i];lb.color=rgb(Math.floor(18+c[0]*0.08*p),Math.floor(18+c[1]*0.08*p),Math.floor(30+c[2]*0.08*p));});}else{hitLine.color=rgb(255,255,255);hitLine.opacity=0.6;laneBgs.forEach(lb=>lb.color=rgb(18,18,30));}
+    if(awakeningFlashTimer>0){awakeningFlashTimer-=dt();awakeFlash.opacity=Math.max(0,awakeningFlashTimer/0.25*0.5);}
+    if(awakeningTimer>0){awakeningTimer-=dt();if(awakeningTimer<0.8)awakeText.opacity=Math.max(0,awakeningTimer/0.8);awakeText.pos.y=GAME_H/2-40-(1.8-awakeningTimer)*15;}
+    get("bgp").forEach(bp=>{bp.pos.y+=bp.vy*dt();bp.pos.x=bp.baseX+Math.sin(songTime*2+bp.phase)*15;bp.opacity=bgVibrancy*0.25;if(bp.pos.y<-10){bp.pos.y=GAME_H+10;bp.baseX=rand(0,GAME_W);}});
+    lastJudgmentTimer-=dt();if(lastJudgmentTimer<=0)judgmentLabel.text="";
+    scoreLabel.text=Math.floor(score).toString();
+    comboLabel.text=combo>=3?t("combo",combo):"";
+    if(combo>=50)comboLabel.color=rgb(255,100,255);else if(combo>=30)comboLabel.color=rgb(255,200,50);else if(combo>=10)comboLabel.color=rgb(80,255,120);else comboLabel.color=rgb(200,200,220);
+    const ms=[10,25,30,50,75,100];let nx=ms.find(m=>m>combo)||100,pv=ms.filter(m=>m<=combo).pop()||0;
+    comboMeterFill.width=Math.max(1,100*Math.min(1,(combo-pv)/(nx-pv)));comboMeterBg.opacity=combo>=3?0.5:0;comboMeterFill.opacity=combo>=3?0.7:0;
+    if(comboShakeTimer>0){comboShakeTimer-=dt();comboLabel.pos.x=GAME_W/2+rand(-3,3);}else comboLabel.pos.x=GAME_W/2;
+    if(screenShakeTimer>0){screenShakeTimer-=dt();camPos(GAME_W/2+rand(-screenShakeIntensity,screenShakeIntensity),GAME_H/2+rand(-screenShakeIntensity,screenShakeIntensity));}else camPos(GAME_W/2,GAME_H/2);
+    progressFill.width=(GAME_W-30)*Math.min(songTime/stage.duration,1);
+    if(enemyHp<=0){gameActive=false;totalScore+=score;playVictorySound();wait(1.2,()=>go("stageresult",{stageIdx,victory:true}));}
+    else if(songTime>=stage.duration+1.5){gameActive=false;totalScore+=score;go("stageresult",{stageIdx,victory:false});}
+  });
+});
+
+// ============================================================
+// STAGE RESULT
+// ============================================================
+scene("stageresult",({stageIdx,victory})=>{
+  const stage=getStage(stageIdx);
+  addBgParticles(15);onUpdate("floater",p=>{p.pos.y+=p.vy*dt();if(p.pos.y<-10)p.pos.y=GAME_H+10;});
+
+  add([text(victory?t("victory"):t("timeUp"),{size:38}),pos(GAME_W/2,45),anchor("center"),color(victory?[80,255,120]:[255,120,80]),z(10)]);
+  add([text(`Stage ${stageIdx+1}: ${stage.name}`,{size:14}),pos(GAME_W/2,85),anchor("center"),color(140,140,170),z(10)]);
+  add([text(`vs ${stage.enemy.name}`,{size:12}),pos(GAME_W/2,103),anchor("center"),color(...STORY_DATA.stages[stageIdx].enemy.color),z(10)]);
+
+  const remainPct=Math.floor((enemyHp/enemyMaxHp)*100);
+  add([text(victory?t("enemyDefeated"):t("enemyHpRemain",remainPct),{size:14}),pos(GAME_W/2,135),anchor("center"),color(victory?[80,255,120]:[255,100,100]),z(10)]);
+
+  const total=judgments.perfect+judgments.great+judgments.good+judgments.miss;
+  const hit=judgments.perfect+judgments.great+judgments.good;
+  const data=[
+    [t("score"),Math.floor(score),[255,255,255]],
+    [t("maxCombo"),maxCombo,[200,200,220]],
+    ["PERFECT",judgments.perfect,[255,230,50]],
+    ["GREAT",judgments.great,[80,255,120]],
+    ["GOOD",judgments.good,[80,180,255]],
+    ["MISS",judgments.miss,[255,60,60]],
+    [t("accuracy"),`${total>0?Math.floor(hit/total*100):0}%`,[200,200,220]],
+  ];
+  data.forEach(([label,val,col],i)=>{const y=175+i*34;add([text(label,{size:14}),pos(GAME_W/2-80,y),anchor("left"),color(120,120,140),z(10)]);add([text(`${val}`,{size:16}),pos(GAME_W/2+80,y),anchor("right"),color(...col),z(10)]);});
+
+  const accuracy=total>0?hit/total:0;let rank="D";
+  if(victory&&accuracy>=0.95&&judgments.miss===0)rank="S";else if(victory&&accuracy>=0.85)rank="A";else if(accuracy>=0.70)rank="B";else if(accuracy>=0.50)rank="C";
+  const rc=rank==="S"?[255,215,0]:rank==="A"?[100,255,100]:rank==="B"?[80,180,255]:[180,180,180];
+  const rl=add([text(rank,{size:55}),pos(GAME_W/2,470),anchor("center"),color(...rc),z(10)]);
+  let rt=0;rl.onUpdate(()=>{rt+=dt();rl.scale=vec2(1+Math.sin(rt*3)*0.04);});
+
+  if(victory){
+    add([text(t("spaceToContinue"),{size:14}),pos(GAME_W/2,540),anchor("center"),color(160,160,180),z(10)]);
+    onKeyPress("space",()=>go("cutscene",{stageIdx,type:"outro"}));onClick(()=>go("cutscene",{stageIdx,type:"outro"}));
+  }else{
+    add([text(t("retryOrMenu"),{size:14}),pos(GAME_W/2,540),anchor("center"),color(160,160,180),z(10)]);
+    onKeyPress("space",()=>go("cutscene",{stageIdx,type:"intro"}));onClick(()=>go("cutscene",{stageIdx,type:"intro"}));onKeyPress("r",()=>go("menu"));
+  }
+});
+
+// ============================================================
+// ENDING
+// ============================================================
+scene("ending",()=>{
+  addBgParticles(35);onUpdate("floater",p=>{p.pos.y+=p.vy*dt();p.pos.x+=p.vx*dt();if(p.pos.y<-10){p.pos.y=GAME_H+10;p.pos.x=rand(0,GAME_W);}});
+
+  add([text(t("title"),{size:40}),pos(GAME_W/2,80),anchor("center"),color(255,200,50),z(10)]);
+  add([rect(150,1),pos(GAME_W/2-75,110),color(80,80,100),z(10)]);
+  add([text(t("theEnd"),{size:24}),pos(GAME_W/2,135),anchor("center"),color(200,200,220),z(10)]);
+
+  [t("endLine1"),t("endLine2"),t("endLine3")].forEach((l,i)=>{add([text(l,{size:14,width:GAME_W-100}),pos(GAME_W/2,195+i*35),anchor("center"),color(160,160,185),z(10)]);});
+
+  add([rect(100,1),pos(GAME_W/2-50,305),color(60,60,80),z(10)]);
+  add([text(t("totalScore",Math.floor(totalScore)),{size:22}),pos(GAME_W/2,335),anchor("center"),color(255,255,255),z(10)]);
+  add([text(t("credits"),{size:13}),pos(GAME_W/2,385),anchor("center"),color(100,100,120),z(10)]);
+  [t("credit1"),t("credit2"),t("credit3")].forEach((l,i)=>{add([text(l,{size:12}),pos(GAME_W/2,410+i*24),anchor("center"),color(90,90,110),z(10)]);});
+  add([text(t("thankYou"),{size:18}),pos(GAME_W/2,495),anchor("center"),color(255,200,50),z(10)]);
+  const ret=add([text(t("returnMenu"),{size:14}),pos(GAME_W/2,545),anchor("center"),color(150,150,170),z(10)]);
+  let tt=0;ret.onUpdate(()=>{tt+=dt();ret.opacity=0.3+0.5*Math.sin(tt*3);});
+  onKeyPress("space",()=>go("menu"));onClick(()=>go("menu"));
+});
+
+go("langselect");
+</script>
+</body>
+</html>
