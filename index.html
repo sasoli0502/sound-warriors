@@ -109,7 +109,7 @@ try {
   }
 } catch(e) {}
 
-const GAME_W = 800;
+const GAME_W = 1080;
 const GAME_H = 600;
 
 const k = kaboom({
@@ -118,7 +118,7 @@ const k = kaboom({
 });
 
 // ==================== CONSTANTS ====================
-const LANES = 4, LANE_W = 100;
+const LANES = 4, LANE_W = 120;
 const TOTAL_LANE_W = LANES * LANE_W;
 const LANE_START_X = (GAME_W - TOTAL_LANE_W) / 2;
 const HIT_Y = GAME_H - 90, NOTE_SPEED = 350, SPAWN_Y = -40;
@@ -542,7 +542,7 @@ scene("game",({stageIdx})=>{
   const hitLine=add([rect(TOTAL_LANE_W,3),pos(LANE_START_X,HIT_Y),color(255,255,255),opacity(0.6),z(5)]);
   add([rect(TOTAL_LANE_W+4,2),pos(LANE_START_X-2,HIT_Y+3),color(255,255,255),opacity(0.1),z(4)]);
   for(let i=0;i<LANES;i++){const cx=LANE_START_X+i*LANE_W+LANE_W/2;add([circle(28),pos(cx,HIT_Y),anchor("center"),color(...LANE_COLORS[i]),opacity(0.12),z(4),"hitzone",{lane:i}]);add([text(LANE_LABELS[i],{size:18}),pos(cx,HIT_Y+30),anchor("center"),color(...LANE_COLORS[i]),opacity(0.5),z(5)]);}
-  for(let i=0;i<LANES;i++){const tz=add([rect(LANE_W,200),pos(LANE_START_X+i*LANE_W,HIT_Y-100),opacity(0),area(),z(50),"touchzone",{lane:i}]);tz.onClick(()=>{if(gameActive&&!paused)hitLane(i);});}
+  for(let i=0;i<LANES;i++){const tz=add([rect(LANE_W,GAME_H),pos(LANE_START_X+i*LANE_W,0),opacity(0),area(),z(50),"touchzone",{lane:i}]);tz.onClick(()=>{if(gameActive&&!paused)hitLane(i);});}
 
   // UI
   const scoreLabel=add([text("0",{size:22}),pos(GAME_W-15,50),anchor("topright"),color(255,255,255),z(100)]);
